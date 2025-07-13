@@ -1,0 +1,14 @@
+# Core LangGraph packages
+langgraph>=0.2.0
+langchain-core>=0.3.0
+langchain-openai>=0.2.0
+
+# Memory management with LangMem
+langmem>=0.1.0
+
+# Database access for product search
+supabase>=2.0.0
+
+# Additional utilities
+python-dotenv>=1.0.0
+typing-extensions>=4.12.0 
