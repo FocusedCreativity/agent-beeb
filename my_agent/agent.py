@@ -147,15 +147,125 @@ class AgentBeeb:
                 
                 elif tool_name == "create_grocery_list":
                     result = create_grocery_list.invoke(tool_args)
-                    content = f"Created grocery list: {result}"
+                    
+                    if result.get("error"):
+                        content = f"Error creating grocery list: {result['error']}"
+                    else:
+                        content = f"**Grocery List Created**\n\n"
+                        
+                        # Format items with details
+                        items = result.get("items", [])
+                        if items:
+                            content += f"**Items ({len(items)} total):**\n"
+                            for item in items:
+                                if item.get('product') != "Not found":
+                                    content += f"• {item.get('searched_for', 'Unknown')}: {item.get('product', 'Unknown')} ({item.get('brand', 'Unknown')}) - €{item.get('price', 'N/A')} at {item.get('store', 'Unknown')}\n"
+                                else:
+                                    content += f"• {item.get('searched_for', 'Unknown')}: Not found\n"
+                        
+                        # Add cost summary
+                        total_cost = result.get("total_cost", 0)
+                        budget_status = result.get("budget_status", "")
+                        content += f"\n**Total Cost:** €{total_cost:.2f}"
+                        
+                        if budget_status == "over_budget":
+                            content += " ⚠️ Over budget!"
+                        elif budget_status == "within_budget":
+                            content += " ✅ Within budget"
+                        
+                        # Add store breakdown
+                        stores = result.get("stores", {})
+                        if stores:
+                            content += f"\n\n**Store Breakdown:**\n"
+                            for store, store_items in stores.items():
+                                store_total = sum(item.get('price', 0) for item in store_items)
+                                content += f"• **{store}** (€{store_total:.2f}):\n"
+                                for store_item in store_items:
+                                    content += f"  - {store_item.get('product', 'Unknown')} - €{store_item.get('price', 'N/A')}\n"
+                        
+                        # Add suggestions
+                        suggestions = result.get("suggestions", [])
+                        if suggestions:
+                            content += f"\n**Suggestions:**\n"
+                            for suggestion in suggestions:
+                                content += f"• {suggestion}\n"
                 
                 elif tool_name == "plan_meal_with_products":
                     result = plan_meal_with_products.invoke(tool_args)
-                    content = f"Meal plan created: {result}"
+                    
+                    if result.get("error"):
+                        content = f"Error planning meal: {result['error']}"
+                    else:
+                        content = f"**Meal Plan: {result.get('meal_name', 'Unknown')}**\n"
+                        content += f"**Servings:** {result.get('servings', 'Unknown')}\n\n"
+                        
+                        # Format ingredients
+                        ingredients = result.get("ingredients", [])
+                        if ingredients:
+                            content += "**Ingredients & Products:**\n"
+                            for ing in ingredients:
+                                if ing.get("product_found") != "Not available":
+                                    content += f"• {ing.get('ingredient', 'Unknown')}: {ing.get('product_found', 'Unknown')} ({ing.get('brand', 'Unknown')}) - €{ing.get('price', 'N/A')} at {ing.get('store', 'Unknown')}\n"
+                                else:
+                                    content += f"• {ing.get('ingredient', 'Unknown')}: Not available\n"
+                        
+                        # Add cost breakdown
+                        total_cost = result.get("total_cost", 0)
+                        cost_per_serving = result.get("cost_per_serving", 0)
+                        content += f"\n**Cost:** €{total_cost:.2f} total (€{cost_per_serving:.2f} per serving)"
+                        
+                        # Add budget status
+                        budget_status = result.get("budget_status", "")
+                        if budget_status == "over_budget":
+                            content += " ⚠️ Over budget!"
+                        elif budget_status == "within_budget":
+                            content += " ✅ Within budget"
+                        
+                        # Add preparation notes
+                        notes = result.get("preparation_notes", [])
+                        if notes:
+                            content += f"\n\n**Notes:** {'; '.join(notes)}"
                 
                 elif tool_name == "suggest_weekly_meal_plan":
                     result = suggest_weekly_meal_plan.invoke(tool_args)
-                    content = f"Weekly meal plan: {result}"
+                    
+                    if result.get("error"):
+                        content = f"Error creating weekly meal plan: {result['error']}"
+                    else:
+                        content = f"**Weekly Meal Plan**\n\n"
+                        
+                        # Format meals
+                        meals = result.get("meals", [])
+                        if meals:
+                            content += "**Planned Meals:**\n"
+                            for i, meal in enumerate(meals, 1):
+                                content += f"{i}. **{meal.get('meal_name', 'Unknown')}** - €{meal.get('total_cost', 0):.2f} ({meal.get('servings', 'Unknown')} servings)\n"
+                        
+                        # Add cost summary
+                        total_cost = result.get("total_weekly_cost", 0)
+                        content += f"\n**Total Weekly Cost:** €{total_cost:.2f}"
+                        
+                        # Add budget analysis
+                        budget_analysis = result.get("budget_analysis", {})
+                        if budget_analysis:
+                            total_budget = budget_analysis.get("total_budget", 0)
+                            under_over = budget_analysis.get("under_over", "")
+                            difference = budget_analysis.get("difference", 0)
+                            
+                            if under_over == "under":
+                                content += f" (€{difference:.2f} under budget of €{total_budget:.2f}) ✅"
+                            elif under_over == "over":
+                                content += f" (€{difference:.2f} over budget of €{total_budget:.2f}) ⚠️"
+                        
+                        # Add consolidated shopping list
+                        shopping_list = result.get("consolidated_shopping_list", {})
+                        if shopping_list:
+                            content += f"\n\n**Shopping List ({len(shopping_list)} items):**\n"
+                            for ingredient, details in shopping_list.items():
+                                if details.get("product_found") != "Not available":
+                                    content += f"• {ingredient}: {details.get('product_found', 'Unknown')} - €{details.get('price', 'N/A')} at {details.get('store', 'Unknown')}\n"
+                                else:
+                                    content += f"• {ingredient}: Not available\n"
                 
                 else:
                     content = f"Unknown tool: {tool_name}"
