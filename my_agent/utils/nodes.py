@@ -150,8 +150,21 @@ Always use your tools to provide specific, actionable advice with real product d
             suggest_weekly_meal_plan
         ]).invoke(validated_messages)
     except Exception as e:
-        # If there's an error, create a simple response without tools
-        response = AIMessage(content="I apologize, but I'm having trouble accessing my tools right now. Please try rephrasing your request, and I'll do my best to help you with your grocery shopping needs.")
+        # Log the actual error for debugging
+        import logging
+        logging.error(f"Tool binding/invocation failed: {str(e)}")
+        
+        # Check for specific error types and provide helpful messages
+        error_msg = str(e).lower()
+        
+        if "supabase" in error_msg or "database" in error_msg:
+            response = AIMessage(content="I'm having trouble connecting to my product database. Please check that the Supabase credentials are properly configured. Let me know if you need help with basic grocery shopping questions in the meantime!")
+        elif "openai" in error_msg or "api" in error_msg or "key" in error_msg:
+            response = AIMessage(content="I'm having trouble with my AI model connection. Please check that the OpenAI API key is properly configured. Let me know if you need help!")
+        elif "rate" in error_msg or "limit" in error_msg:
+            response = AIMessage(content="I'm currently experiencing high usage. Please try again in a few moments, and I'll be happy to help with your grocery shopping needs!")
+        else:
+            response = AIMessage(content=f"I'm experiencing a technical issue: {str(e)[:100]}... Please try rephrasing your request, and I'll do my best to help you with your grocery shopping needs.")
     
     # Prepare return value
     result = {"messages": [response]}
