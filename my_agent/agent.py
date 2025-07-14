@@ -13,7 +13,12 @@ from langmem import ReflectionExecutor, create_memory_store_manager
 
 from my_agent.utils.state import ChatbotState
 from my_agent.utils.nodes import call_model, should_continue
-from my_agent.utils.tools import search_grocery_products
+from my_agent.utils.tools import (
+    search_grocery_products,
+    create_grocery_list,
+    plan_meal_with_products,
+    suggest_weekly_meal_plan
+)
 
 # Load environment variables
 import pathlib
@@ -92,18 +97,31 @@ class AgentBeeb:
         messages = state["messages"]
         last_message = messages[-1]
         
+        # Validate that we have tool calls
         if not hasattr(last_message, 'tool_calls') or not last_message.tool_calls:
             return {"messages": []}
         
         tool_messages = []
         
         for tool_call in last_message.tool_calls:
-            tool_name = tool_call["name"]
-            
-            if tool_name == "search_grocery_products":
-                try:
-                    # Execute the tool with the arguments from the tool call
-                    result = search_grocery_products.invoke(tool_call["args"])
+            try:
+                # Extract tool call information safely
+                tool_id = tool_call.get("id") if isinstance(tool_call, dict) else getattr(tool_call, "id", None)
+                tool_name = tool_call.get("name") if isinstance(tool_call, dict) else getattr(tool_call, "name", None)
+                tool_args = tool_call.get("args") if isinstance(tool_call, dict) else getattr(tool_call, "args", {})
+                
+                # Ensure we have all required information
+                if not tool_id or not tool_name:
+                    error_message = ToolMessage(
+                        content="Error: Invalid tool call format",
+                        tool_call_id=tool_id or "unknown"
+                    )
+                    tool_messages.append(error_message)
+                    continue
+                
+                # Execute the appropriate tool
+                if tool_name == "search_grocery_products":
+                    result = search_grocery_products.invoke(tool_args)
                     
                     # Format the results for better agent understanding
                     if isinstance(result, list) and len(result) > 0:
@@ -126,20 +144,37 @@ class AgentBeeb:
                         content = summary
                     else:
                         content = "No products found matching your criteria."
+                
+                elif tool_name == "create_grocery_list":
+                    result = create_grocery_list.invoke(tool_args)
+                    content = f"Created grocery list: {result}"
+                
+                elif tool_name == "plan_meal_with_products":
+                    result = plan_meal_with_products.invoke(tool_args)
+                    content = f"Meal plan created: {result}"
+                
+                elif tool_name == "suggest_weekly_meal_plan":
+                    result = suggest_weekly_meal_plan.invoke(tool_args)
+                    content = f"Weekly meal plan: {result}"
+                
+                else:
+                    content = f"Unknown tool: {tool_name}"
+                
+                # Create tool message
+                tool_message = ToolMessage(
+                    content=content,
+                    tool_call_id=tool_id
+                )
+                tool_messages.append(tool_message)
                     
-                    # Create tool message
-                    tool_message = ToolMessage(
-                        content=content,
-                        tool_call_id=tool_call["id"]
-                    )
-                    tool_messages.append(tool_message)
-                    
-                except Exception as e:
-                    error_message = ToolMessage(
-                        content=f"Error searching products: {str(e)}",
-                        tool_call_id=tool_call["id"]
-                    )
-                    tool_messages.append(error_message)
+            except Exception as e:
+                # Always create a ToolMessage even if there's an error
+                tool_id = tool_call.get("id") if isinstance(tool_call, dict) else getattr(tool_call, "id", "unknown")
+                error_message = ToolMessage(
+                    content=f"Error executing tool: {str(e)}",
+                    tool_call_id=tool_id
+                )
+                tool_messages.append(error_message)
         
         return {"messages": tool_messages}
     

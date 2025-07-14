@@ -1,7 +1,7 @@
 import os
 from typing import Dict, Any
 from langchain_openai import ChatOpenAI
-from langchain_core.messages import SystemMessage, AIMessage
+from langchain_core.messages import SystemMessage, AIMessage, ToolMessage
 from langmem.short_term import summarize_messages, SummarizationResult
 from my_agent.utils.state import ChatbotState
 from my_agent.utils.tools import (
@@ -23,7 +23,40 @@ model = ChatOpenAI(
 summarization_model = model.bind(max_tokens=500)
 
 
-
+def _validate_message_sequence(messages):
+    """
+    Validate that tool calls are properly paired with tool messages.
+    Remove any tool calls that don't have corresponding tool messages.
+    """
+    validated_messages = []
+    pending_tool_calls = []
+    
+    for msg in messages:
+        if hasattr(msg, 'tool_calls') and msg.tool_calls:
+            # This is a message with tool calls
+            pending_tool_calls.extend(msg.tool_calls)
+            validated_messages.append(msg)
+        elif isinstance(msg, ToolMessage):
+            # This is a tool message response
+            validated_messages.append(msg)
+            # Remove the corresponding tool call from pending
+            pending_tool_calls = [tc for tc in pending_tool_calls if tc.get('id') != msg.tool_call_id]
+        else:
+            # Regular message
+            validated_messages.append(msg)
+    
+    # If there are pending tool calls without responses, remove the last AI message with tool calls
+    if pending_tool_calls:
+        # Find the last AI message with tool calls and remove it
+        for i in range(len(validated_messages) - 1, -1, -1):
+            if (hasattr(validated_messages[i], 'tool_calls') and 
+                validated_messages[i].tool_calls and 
+                isinstance(validated_messages[i], AIMessage)):
+                # Remove this message to avoid the error
+                validated_messages.pop(i)
+                break
+    
+    return validated_messages
 
 
 def call_model(state: ChatbotState) -> Dict[str, Any]:
@@ -40,20 +73,22 @@ def call_model(state: ChatbotState) -> Dict[str, Any]:
     # Get the current messages
     messages = state["messages"]
     
-    # Check if the last few messages contain tool calls that need their responses
-    # We need to ensure tool calls and tool messages stay together
-    preserve_recent_tools = False
-    recent_message_count = min(10, len(messages))  # Check last 10 messages
+    # Validate message sequence before summarization
+    validated_messages = _validate_message_sequence(messages)
     
-    for i in range(len(messages) - recent_message_count, len(messages)):
-        if i >= 0 and hasattr(messages[i], 'tool_calls') and messages[i].tool_calls:
+    # Check if we need to preserve recent tool calls
+    preserve_recent_tools = False
+    recent_message_count = min(10, len(validated_messages))
+    
+    for i in range(len(validated_messages) - recent_message_count, len(validated_messages)):
+        if i >= 0 and hasattr(validated_messages[i], 'tool_calls') and validated_messages[i].tool_calls:
             preserve_recent_tools = True
             break
     
     # Use LangMem's summarize_messages with careful handling of tool calls
     try:
         summarization_result: SummarizationResult = summarize_messages(
-            messages,
+            validated_messages,
             running_summary=state.get("summary"),
             model=summarization_model,
             max_tokens=state.get("max_tokens", 4000),
@@ -61,10 +96,15 @@ def call_model(state: ChatbotState) -> Dict[str, Any]:
             max_summary_tokens=state.get("max_summary_tokens", 500),
             token_counter=model.get_num_tokens_from_messages
         )
+        
+        # Validate the summarized messages again
+        final_messages = _validate_message_sequence(summarization_result.messages)
+        
     except Exception as e:
-        # If summarization fails, use the original messages
+        # If summarization fails, use the validated messages
+        final_messages = validated_messages
         summarization_result = type('SummarizationResult', (), {
-            'messages': messages,
+            'messages': final_messages,
             'running_summary': state.get("summary")
         })()
     
@@ -116,30 +156,8 @@ I'll use this information to provide more personalized recommendations and assis
 
 Always use your tools to provide specific, actionable advice with real product details, current prices, and store information. Focus on practical grocery shopping solutions that fit the user's needs, preferences, and budget.""")
     
-    # Combine system message with summarized messages
-    messages_with_context = [system_message] + summarization_result.messages
-    
-    # Validate message sequence before sending to LLM
-    validated_messages = []
-    for msg in messages_with_context:
-        # Skip any malformed messages or tool calls without responses
-        if hasattr(msg, 'tool_calls') and msg.tool_calls:
-            # Check if this tool call has responses in the following messages
-            try:
-                # tool_calls might be objects with .id or dictionaries with 'id' key
-                tool_call_ids = []
-                for tc in msg.tool_calls:
-                    if hasattr(tc, 'id'):
-                        tool_call_ids.append(tc.id)
-                    elif isinstance(tc, dict) and 'id' in tc:
-                        tool_call_ids.append(tc['id'])
-                # For now, include the message and let the flow handle it properly
-                validated_messages.append(msg)
-            except Exception:
-                # If there's any issue with tool call validation, skip this message
-                continue
-        else:
-            validated_messages.append(msg)
+    # Combine system message with final validated messages
+    messages_with_context = [system_message] + final_messages
     
     # Generate response with tool binding
     try:
@@ -148,23 +166,10 @@ Always use your tools to provide specific, actionable advice with real product d
             create_grocery_list,
             plan_meal_with_products,
             suggest_weekly_meal_plan
-        ]).invoke(validated_messages)
+        ]).invoke(messages_with_context)
     except Exception as e:
-        # Log the actual error for debugging
-        import logging
-        logging.error(f"Tool binding/invocation failed: {str(e)}")
-        
-        # Check for specific error types and provide helpful messages
-        error_msg = str(e).lower()
-        
-        if "supabase" in error_msg or "database" in error_msg:
-            response = AIMessage(content="I'm having trouble connecting to my product database. Please check that the Supabase credentials are properly configured. Let me know if you need help with basic grocery shopping questions in the meantime!")
-        elif "openai" in error_msg or "api" in error_msg or "key" in error_msg:
-            response = AIMessage(content="I'm having trouble with my AI model connection. Please check that the OpenAI API key is properly configured. Let me know if you need help!")
-        elif "rate" in error_msg or "limit" in error_msg:
-            response = AIMessage(content="I'm currently experiencing high usage. Please try again in a few moments, and I'll be happy to help with your grocery shopping needs!")
-        else:
-            response = AIMessage(content=f"I'm experiencing a technical issue: {str(e)[:100]}... Please try rephrasing your request, and I'll do my best to help you with your grocery shopping needs.")
+        # If there's an error, create a simple response without tools
+        response = AIMessage(content="I apologize, but I'm having trouble accessing my tools right now. Please try rephrasing your request, and I'll do my best to help you with your grocery shopping needs.")
     
     # Prepare return value
     result = {"messages": [response]}
