@@ -13,5 +13,8 @@
     "graphs": {
         "chatbot_agent": "./my_agent/agent.py:agent"
     },
-    "env": "./.env"
+    "env": "./.env",
+    "storage": {
+        "type": "memory"
+    }
 } 
