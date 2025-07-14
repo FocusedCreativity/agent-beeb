@@ -319,17 +319,20 @@ class AgentBeeb:
 
 # Create entrypoint for LangGraph Platform compatibility
 @entrypoint()
-def chat_entrypoint(message: str, user_id: str = "default_user") -> str:
+def chat_entrypoint(input: Dict[str, Any]) -> str:
     """
     LangGraph Platform entrypoint for Agent Beeb.
     
     Args:
-        message: User's message
-        user_id: User identifier for personalized memory
+        input: Dictionary containing message and user_id
         
     Returns:
         Agent Beeb's response
     """
+    # Extract message and user_id from input dictionary
+    message = input.get("message", "")
+    user_id = input.get("user_id", "default_user")
+    
     agent = AgentBeeb()
     
     response = agent.chat(
