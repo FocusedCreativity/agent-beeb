@@ -317,71 +317,14 @@ class AgentBeeb:
             return []
 
 
-# Create entrypoint for LangGraph Platform compatibility
-@entrypoint()
-def chat_entrypoint(input: Dict[str, Any]) -> str:
-    """
-    LangGraph Platform entrypoint for Agent Beeb.
-    
-    Args:
-        input: Dictionary containing message and user_id
-        
-    Returns:
-        Agent Beeb's response
-    """
-    # Extract message and user_id from input dictionary
-    message = input.get("message", "")
-    user_id = input.get("user_id", "default_user")
-    
-    agent = AgentBeeb()
-    
-    response = agent.chat(
-        message=message,
-        user_id=user_id
-    )
-    
-    return response.get("response", "I'm sorry, I couldn't process your message.")
-
-
-# Factory function for creating Agent Beeb instances
-def create_agent():
-    """Create the compiled graph that LangGraph expects."""
-    return AgentBeeb().graph
-
-
+# Create the main Agent Beeb graph for deployment
 def create_agent_beeb() -> AgentBeeb:
-    """Create and return Agent Beeb instance."""
+    """Create an Agent Beeb instance."""
     return AgentBeeb()
 
+# Create the compiled graph that LangGraph expects for deployment
+agent_beeb = create_agent_beeb()
+graph = agent_beeb.graph
 
-def process_message(
-    message: str,
-    thread_id: Optional[str] = None,
-    **kwargs
-) -> Dict[str, Any]:
-    """
-    Process a message using Agent Beeb with optional thread continuation.
-    
-    Args:
-        message: The user's message
-        thread_id: Optional thread ID for conversation continuity
-        **kwargs: Additional arguments passed to the chat method
-    
-    Returns:
-        Dictionary containing response and thread information
-    """
-    agent = create_agent_beeb()
-    
-    # Extract user_id from kwargs if provided
-    user_id = kwargs.get("user_id", "default_user")
-    
-    return agent.chat(
-        message=message,
-        thread_id=thread_id,
-        user_id=user_id,
-        **{k: v for k, v in kwargs.items() if k != "user_id"}
-    )
-
-
-# Create the main agent instance for LangGraph Platform compatibility
-agent = chat_entrypoint 
+# This is the main graph that should be deployed
+agent = graph 

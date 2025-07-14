@@ -13,7 +13,7 @@
         "./my_agent"
     ],
     "graphs": {
-        "chatbot_agent": "./my_agent/agent.py:chat_entrypoint"
+        "chatbot_agent": "./my_agent/agent.py:agent"
     },
     "env": "./.env"
 } 
