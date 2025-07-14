@@ -3,18 +3,17 @@
         "langchain_openai",
         "langgraph",
         "langchain-core",
+        "langchain",
+        "langmem",
+        "supabase",
         "psycopg2-binary",
         "asyncpg",
-        "sqlalchemy",
         "python-dotenv",
         "typing-extensions",
         "./my_agent"
     ],
     "graphs": {
-        "chatbot_agent": "./my_agent/agent.py:agent"
+        "chatbot_agent": "./my_agent/agent.py:chat_entrypoint"
     },
-    "env": "./.env",
-    "storage": {
-        "type": "memory"
-    }
+    "env": "./.env"
 } 

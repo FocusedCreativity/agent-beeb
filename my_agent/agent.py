@@ -377,4 +377,8 @@ def process_message(
         thread_id=thread_id,
         user_id=user_id,
         **{k: v for k, v in kwargs.items() if k != "user_id"}
-    ) 
+    )
+
+
+# Create the main agent instance for LangGraph Platform compatibility
+agent = chat_entrypoint 
