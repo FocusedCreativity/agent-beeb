@@ -125,9 +125,19 @@ Always use your tools to provide specific, actionable advice with real product d
         # Skip any malformed messages or tool calls without responses
         if hasattr(msg, 'tool_calls') and msg.tool_calls:
             # Check if this tool call has responses in the following messages
-            tool_call_ids = [tc.id for tc in msg.tool_calls]
-            # For now, include the message and let the flow handle it properly
-            validated_messages.append(msg)
+            try:
+                # tool_calls might be objects with .id or dictionaries with 'id' key
+                tool_call_ids = []
+                for tc in msg.tool_calls:
+                    if hasattr(tc, 'id'):
+                        tool_call_ids.append(tc.id)
+                    elif isinstance(tc, dict) and 'id' in tc:
+                        tool_call_ids.append(tc['id'])
+                # For now, include the message and let the flow handle it properly
+                validated_messages.append(msg)
+            except Exception:
+                # If there's any issue with tool call validation, skip this message
+                continue
         else:
             validated_messages.append(msg)
     
