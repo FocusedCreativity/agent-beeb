@@ -122,35 +122,31 @@ def search_grocery_products(
         
         # For simple, short queries, use faster basic search to avoid 122+ second delays
         if len(query.split()) <= 2 and not dietary_filters and not category_filter:
-            # Use basic text search for simple queries like "eggs", "milk", etc.
-            query_builder = supabase.table('products').select('*')
-            query_builder = query_builder.ilike('product_name', f'%{query}%')
-            
-            if max_price:
-                query_builder = query_builder.lte('price', max_price)
-            if store_preference:
-                query_builder = query_builder.eq('store_name', store_preference)
-            
-            # Order by price and limit results
-            result = query_builder.order('price', desc=False).limit(limit).execute()
+            # Use the search_cheapest_products function for simple queries like "eggs", "milk", etc.
+            result = supabase.rpc('search_cheapest_products', {
+                'query_text': query,
+                'max_price': max_price
+            }).execute()
             
             # Format basic results
             if result.data:
                 basic_results = []
                 for item in result.data:
                     basic_results.append({
-                        'product_id': item.get('id'),
+                        'product_id': item.get('product_id'),
                         'gtin': item.get('gtin'),
-                        'product_title': item.get('product_name'),
+                        'product_title': item.get('product_title'),
                         'brand': item.get('brand'),
                         'price': item.get('price'),
                         'store_name': item.get('store_name'),
-                        'search_type': 'basic_text_search',
+                        'search_type': 'basic_cheapest_search',
                         'relevance_score': 1.0,
                         'price_rank': 1,
-                        'suggestion': f'Found via basic search'
+                        'suggestion': f'Found via fast search'
                     })
-                return _format_product_results(basic_results)
+                # Apply limit here since the function might return more results
+                limited_results = basic_results[:limit]
+                return _format_product_results(limited_results)
         
         # Use the existing smart_grocery_search function for complex queries
         result = supabase.rpc('smart_grocery_search', {
