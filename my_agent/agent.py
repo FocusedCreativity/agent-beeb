@@ -128,7 +128,7 @@ class AgentBeeb:
                         formatted_results = []
                         for item in result:
                             product_info = {
-                                "name": item.get("name", "Unknown"),
+                                "name": item.get("title", "Unknown"),  # Fixed: was "name", now "title"
                                 "brand": item.get("brand", "Unknown"),
                                 "price": item.get("best_price", "N/A"),
                                 "store": item.get("best_store", "Unknown"),

@@ -70,7 +70,7 @@ def _format_product_results(products: List[Dict]) -> List[Dict[str, Any]]:
         formatted_product = {
             "id": product.get("product_id"),
             "gtin": product.get("gtin"),
-            "title": product.get("title"),
+            "title": product.get("product_title"),  # Fixed: was "title", now "product_title"
             "brand": product.get("brand"),
             "best_price": product.get("price"),
             "best_store": product.get("store_name"),
@@ -120,15 +120,50 @@ def search_grocery_products(
         
         supabase = create_client(supabase_url, supabase_key)
         
-        # Use the existing smart_grocery_search function which combines semantic search with price optimization
+        # For simple, short queries, use faster basic search to avoid 122+ second delays
+        if len(query.split()) <= 2 and not dietary_filters and not category_filter:
+            # Use basic text search for simple queries like "eggs", "milk", etc.
+            query_builder = supabase.table('products').select('*')
+            query_builder = query_builder.ilike('product_name', f'%{query}%')
+            
+            if max_price:
+                query_builder = query_builder.lte('price', max_price)
+            if store_preference:
+                query_builder = query_builder.eq('store_name', store_preference)
+            
+            # Order by price and limit results
+            result = query_builder.order('price', desc=False).limit(limit).execute()
+            
+            # Format basic results
+            if result.data:
+                basic_results = []
+                for item in result.data:
+                    basic_results.append({
+                        'product_id': item.get('id'),
+                        'gtin': item.get('gtin'),
+                        'product_title': item.get('product_name'),
+                        'brand': item.get('brand'),
+                        'price': item.get('price'),
+                        'store_name': item.get('store_name'),
+                        'search_type': 'basic_text_search',
+                        'relevance_score': 1.0,
+                        'price_rank': 1,
+                        'suggestion': f'Found via basic search'
+                    })
+                return _format_product_results(basic_results)
+        
+        # Use the existing smart_grocery_search function for complex queries
         result = supabase.rpc('smart_grocery_search', {
             'user_query': query,
             'max_budget': max_price,
-            'store_preference': store_preference
+            'store_preference': store_preference,
+            'result_limit': limit  # Add limit parameter to improve performance
         }).execute()
         
         if result.data:
-            return _format_product_results(result.data)
+            # Apply limit as backup in case database function doesn't support it
+            limited_results = result.data[:limit] if len(result.data) > limit else result.data
+            return _format_product_results(limited_results)
         else:
             return []
             
