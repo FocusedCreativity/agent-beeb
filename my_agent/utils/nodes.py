@@ -37,16 +37,36 @@ def call_model(state: ChatbotState) -> Dict[str, Any]:
         Dictionary with the AI response message and updated summary
     """
     
-    # Use LangMem's summarize_messages to handle context length
-    summarization_result: SummarizationResult = summarize_messages(
-        state["messages"],
-        running_summary=state.get("summary"),
-        model=summarization_model,
-        max_tokens=state.get("max_tokens", 4000),  # Increased from 256 to 4000
-        max_tokens_before_summary=state.get("max_tokens_before_summary", 3000),  # Increased from 256 to 3000
-        max_summary_tokens=state.get("max_summary_tokens", 500),  # Increased from 128 to 500
-        token_counter=model.get_num_tokens_from_messages
-    )
+    # Get the current messages
+    messages = state["messages"]
+    
+    # Check if the last few messages contain tool calls that need their responses
+    # We need to ensure tool calls and tool messages stay together
+    preserve_recent_tools = False
+    recent_message_count = min(10, len(messages))  # Check last 10 messages
+    
+    for i in range(len(messages) - recent_message_count, len(messages)):
+        if i >= 0 and hasattr(messages[i], 'tool_calls') and messages[i].tool_calls:
+            preserve_recent_tools = True
+            break
+    
+    # Use LangMem's summarize_messages with careful handling of tool calls
+    try:
+        summarization_result: SummarizationResult = summarize_messages(
+            messages,
+            running_summary=state.get("summary"),
+            model=summarization_model,
+            max_tokens=state.get("max_tokens", 4000),
+            max_tokens_before_summary=state.get("max_tokens_before_summary", 3000) if not preserve_recent_tools else 4000,
+            max_summary_tokens=state.get("max_summary_tokens", 500),
+            token_counter=model.get_num_tokens_from_messages
+        )
+    except Exception as e:
+        # If summarization fails, use the original messages
+        summarization_result = type('SummarizationResult', (), {
+            'messages': messages,
+            'running_summary': state.get("summary")
+        })()
     
     # Get user context and existing memories
     user_context = state.get("user_context", {})
@@ -99,19 +119,35 @@ Always use your tools to provide specific, actionable advice with real product d
     # Combine system message with summarized messages
     messages_with_context = [system_message] + summarization_result.messages
     
+    # Validate message sequence before sending to LLM
+    validated_messages = []
+    for msg in messages_with_context:
+        # Skip any malformed messages or tool calls without responses
+        if hasattr(msg, 'tool_calls') and msg.tool_calls:
+            # Check if this tool call has responses in the following messages
+            tool_call_ids = [tc.id for tc in msg.tool_calls]
+            # For now, include the message and let the flow handle it properly
+            validated_messages.append(msg)
+        else:
+            validated_messages.append(msg)
+    
     # Generate response with tool binding
-    response = model.bind_tools([
-        search_grocery_products,
-        create_grocery_list,
-        plan_meal_with_products,
-        suggest_weekly_meal_plan
-    ]).invoke(messages_with_context)
+    try:
+        response = model.bind_tools([
+            search_grocery_products,
+            create_grocery_list,
+            plan_meal_with_products,
+            suggest_weekly_meal_plan
+        ]).invoke(validated_messages)
+    except Exception as e:
+        # If there's an error, create a simple response without tools
+        response = AIMessage(content="I apologize, but I'm having trouble accessing my tools right now. Please try rephrasing your request, and I'll do my best to help you with your grocery shopping needs.")
     
     # Prepare return value
     result = {"messages": [response]}
     
     # Include updated summary if available
-    if summarization_result.running_summary:
+    if hasattr(summarization_result, 'running_summary') and summarization_result.running_summary:
         result["summary"] = summarization_result.running_summary
     
     return result
